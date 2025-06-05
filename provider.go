@@ -142,6 +142,7 @@ func (o *OpenrouterProvider) GetModelDetails(modelName string) (map[string]inter
 			"completion",
 			"chat",
 			"embeddings",
+			"vision",
 		},
 	}, nil
 }

@@ -16,6 +16,64 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
+// OllamaMessage represents the Ollama message format which may include images
+type OllamaMessage struct {
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"` // Base64 encoded images
+}
+
+// convertOllamaMessagesToOpenAI converts Ollama-format messages to OpenAI format
+func convertOllamaMessagesToOpenAI(ollamaMessages []OllamaMessage) []openai.ChatCompletionMessage {
+	var openaiMessages []openai.ChatCompletionMessage
+
+	for _, ollamaMsg := range ollamaMessages {
+		openaiMsg := openai.ChatCompletionMessage{
+			Role: ollamaMsg.Role,
+		}
+
+		// If there are no images, use simple content string
+		if len(ollamaMsg.Images) == 0 {
+			openaiMsg.Content = ollamaMsg.Content
+		} else {
+			// Use MultiContent for messages with images
+			var parts []openai.ChatMessagePart
+
+			// Add text content if present
+			if ollamaMsg.Content != "" {
+				parts = append(parts, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeText,
+					Text: ollamaMsg.Content,
+				})
+			}
+
+			// Add image parts
+			for _, imageData := range ollamaMsg.Images {
+				// Ensure the image data has the proper data URL format
+				imageURL := imageData
+				if !strings.HasPrefix(imageData, "data:") {
+					// Assume it's base64 encoded image, add data URL prefix
+					imageURL = "data:image/jpeg;base64," + imageData
+				}
+
+				parts = append(parts, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeImageURL,
+					ImageURL: &openai.ChatMessageImageURL{
+						URL:    imageURL,
+						Detail: openai.ImageURLDetailAuto,
+					},
+				})
+			}
+
+			openaiMsg.MultiContent = parts
+		}
+
+		openaiMessages = append(openaiMessages, openaiMsg)
+	}
+
+	return openaiMessages
+}
+
 var modelFilter map[string]struct{}
 
 func loadModelFilter(path string) (map[string]struct{}, error) {
@@ -285,15 +343,27 @@ func main() {
 
 	r.POST("/api/chat", func(c *gin.Context) {
 		var request struct {
-			Model    string                         `json:"model"`
-			Messages []openai.ChatCompletionMessage `json:"messages"`
-			Stream   *bool                          `json:"stream"` // Добавим поле Stream
+			Model    string          `json:"model"`
+			Messages []OllamaMessage `json:"messages"`
+			Stream   *bool           `json:"stream"`
 		}
 
 		// Parse the JSON request
 		if err := c.ShouldBindJSON(&request); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON payload"})
 			return
+		}
+
+		// Convert Ollama messages to OpenAI format
+		openaiMessages := convertOllamaMessagesToOpenAI(request.Messages)
+		
+		// Log if we're processing any images
+		imageCount := 0
+		for _, msg := range request.Messages {
+			imageCount += len(msg.Images)
+		}
+		if imageCount > 0 {
+			slog.Info("Processing multimodal request", "imageCount", imageCount)
 		}
 
 		// Определяем, нужен ли стриминг (по умолчанию true, если не указано для /api/chat)
@@ -318,7 +388,7 @@ func main() {
 			}
 
 			// Call Chat to get the complete response
-			response, err := provider.Chat(request.Messages, fullModelName)
+			response, err := provider.Chat(openaiMessages, fullModelName)
 			if err != nil {
 				slog.Error("Failed to get chat response", "Error", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -375,7 +445,7 @@ func main() {
 		slog.Info("Using model", "fullModelName", fullModelName)
 
 		// Call ChatStream to get the stream
-		stream, err := provider.ChatStream(request.Messages, fullModelName)
+		stream, err := provider.ChatStream(openaiMessages, fullModelName)
 		if err != nil {
 			slog.Error("Failed to create stream", "Error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
