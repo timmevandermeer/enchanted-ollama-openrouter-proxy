@@ -195,8 +195,8 @@ func main() {
 
 			// Create Ollama-compatible response
 			ollamaResponse := map[string]interface{}{
-				"model":             fullModelName,
-				"created_at":        time.Now().Format(time.RFC3339),
+				"model":      fullModelName,
+				"created_at": time.Now().Format(time.RFC3339),
 				"message": map[string]string{
 					"role":    "assistant",
 					"content": content,
@@ -309,8 +309,8 @@ func main() {
 
 		// ВАЖНО: Замените nil на 0 для числовых полей статистики
 		finalResponse := map[string]interface{}{
-			"model":             fullModelName,
-			"created_at":        time.Now().Format(time.RFC3339),
+			"model":      fullModelName,
+			"created_at": time.Now().Format(time.RFC3339),
 			"message": map[string]string{
 				"role":    "assistant",
 				"content": "", // Пустой контент для финального сообщения
