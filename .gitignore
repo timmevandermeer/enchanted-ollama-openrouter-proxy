@@ -26,3 +26,4 @@ go.work.sum
 .env
 
 __debug*
+ollama-proxy

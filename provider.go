@@ -128,14 +128,41 @@ func (o *OpenrouterProvider) GetModelDetails(modelName string) (map[string]inter
 		"system":     "STUB SYSTEM",
 		"modifiedAt": currentTime,
 		"details": map[string]interface{}{
+			"parent_model":       "",
 			"format":             "gguf",
 			"parameter_size":     "200B",
 			"quantization_level": "Q4_K_M",
+			"family":             "llama",
 		},
 		"model_info": map[string]interface{}{
-			"architecture":    "STUB",
-			"context_length":  200000,
-			"parameter_count": 200_000_000_000,
+			"general.architecture":                   "llama",
+			"general.file_type":                      2,
+			"general.parameter_count":                8030261248,
+			"general.quantization_version":           2,
+			"context_length":                         200000,
+			"parameter_count":                        200_000_000_000,
+			"llama.attention.head_count":             32,
+			"llama.attention.head_count_kv":          8,
+			"llama.attention.layer_norm_rms_epsilon": 0.00001,
+			"llama.block_count":                      32,
+			"llama.context_length":                   8192,
+			"llama.embedding_length":                 4096,
+			"llama.feed_forward_length":              14336,
+			"llama.rope.dimension_count":             128,
+			"llama.rope.freq_base":                   500000,
+			"llama.vocab_size":                       128256,
+			"tokenizer.ggml.bos_token_id":            128000,
+			"tokenizer.ggml.eos_token_id":            128009,
+			"tokenizer.ggml.merges":                  []string{}, // populates if `verbose=true`
+			"tokenizer.ggml.model":                   "gpt2",
+			"tokenizer.ggml.pre":                     "llama-bpe",
+			"tokenizer.ggml.token_type":              []string{}, // populates if `verbose=true`
+			"tokenizer.ggml.tokens":                  []string{}, // populates if `verbose=true`
+		},
+		"capabilities": []string{
+			"completion",
+			"chat",
+			"embeddings",
 		},
 	}, nil
 }
@@ -166,4 +193,76 @@ func (o *OpenrouterProvider) GetFullModelName(alias string) (string, error) {
 	// If no match found, just use the alias as is
 	// This allows direct use of model names that might not be in the list
 	return alias, nil
+}
+
+func (o *OpenrouterProvider) Generate(prompt, modelName string, options map[string]interface{}) (openai.CompletionResponse, error) {
+	// Create a completion request (not chat completion)
+	req := openai.CompletionRequest{
+		Model:  modelName,
+		Prompt: prompt,
+		Stream: false,
+	}
+
+	// Apply options if provided
+	if options != nil {
+		if temp, ok := options["temperature"].(float64); ok {
+			req.Temperature = float32(temp)
+		}
+		if maxTokens, ok := options["num_predict"].(int); ok {
+			req.MaxTokens = maxTokens
+		}
+		if topP, ok := options["top_p"].(float64); ok {
+			req.TopP = float32(topP)
+		}
+		if seed, ok := options["seed"].(int); ok {
+			req.Seed = &seed
+		}
+		if stop, ok := options["stop"].([]string); ok {
+			req.Stop = stop
+		}
+	}
+
+	// Call the OpenAI API to get a complete response
+	resp, err := o.client.CreateCompletion(context.Background(), req)
+	if err != nil {
+		return openai.CompletionResponse{}, err
+	}
+
+	return resp, nil
+}
+
+func (o *OpenrouterProvider) GenerateStream(prompt, modelName string, options map[string]interface{}) (*openai.CompletionStream, error) {
+	// Create a completion request (not chat completion)
+	req := openai.CompletionRequest{
+		Model:  modelName,
+		Prompt: prompt,
+		Stream: true,
+	}
+
+	// Apply options if provided
+	if options != nil {
+		if temp, ok := options["temperature"].(float64); ok {
+			req.Temperature = float32(temp)
+		}
+		if maxTokens, ok := options["num_predict"].(int); ok {
+			req.MaxTokens = maxTokens
+		}
+		if topP, ok := options["top_p"].(float64); ok {
+			req.TopP = float32(topP)
+		}
+		if seed, ok := options["seed"].(int); ok {
+			req.Seed = &seed
+		}
+		if stop, ok := options["stop"].([]string); ok {
+			req.Stop = stop
+		}
+	}
+
+	// Call the OpenAI API to get a streaming response
+	stream, err := o.client.CreateCompletionStream(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	return stream, nil
 }
