@@ -5,10 +5,34 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// matchesAnyPattern checks if a model name matches any of the glob patterns
+func matchesAnyPattern(modelName string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return true // No filter means all models are allowed
+	}
+
+	for _, pattern := range patterns {
+		matched, err := filepath.Match(pattern, modelName)
+		if err != nil {
+			slog.Warn("Invalid glob pattern", "pattern", pattern, "error", err)
+			// Fall back to exact string match if pattern is invalid
+			if pattern == modelName {
+				return true
+			}
+			continue
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
 
 // Model represents a model from the provider
 type Model struct {
@@ -31,7 +55,7 @@ type ModelDetails struct {
 }
 
 // GetTags handles GET /api/tags endpoint
-func GetTags(provider *OpenrouterProvider, modelFilter map[string]struct{}) gin.HandlerFunc {
+func GetTags(provider *OpenrouterProvider, modelPatterns []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		models, err := provider.GetModels()
 		if err != nil {
@@ -43,9 +67,9 @@ func GetTags(provider *OpenrouterProvider, modelFilter map[string]struct{}) gin.
 		// Construct a new array of model objects with extra fields
 		newModels := make([]map[string]interface{}, 0, len(models))
 		for _, m := range models {
-			// If filter is not empty, check if model is in filter
-			if len(modelFilter) > 0 {
-				if _, ok := modelFilter[m.Model]; !ok {
+			// If filter is not empty, check if model matches any pattern
+			if len(modelPatterns) > 0 {
+				if !matchesAnyPattern(m.Model, modelPatterns) {
 					continue
 				}
 			}

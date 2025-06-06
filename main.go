@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"ollama-to-openrouter-proxy/handlers"
@@ -11,9 +12,32 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var modelFilter map[string]struct{}
+var modelFilter []string
 
-func loadModelFilter(path string) (map[string]struct{}, error) {
+// matchesAnyPattern checks if a model name matches any of the glob patterns
+func matchesAnyPattern(modelName string, patterns []string) bool {
+	if len(patterns) == 0 {
+		return true // No filter means all models are allowed
+	}
+
+	for _, pattern := range patterns {
+		matched, err := filepath.Match(pattern, modelName)
+		if err != nil {
+			slog.Warn("Invalid glob pattern", "pattern", pattern, "error", err)
+			// Fall back to exact string match if pattern is invalid
+			if pattern == modelName {
+				return true
+			}
+			continue
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
+}
+
+func loadModelFilter(path string) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -21,12 +45,12 @@ func loadModelFilter(path string) (map[string]struct{}, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	filter := make(map[string]struct{})
+	var filter []string
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
-			filter[line] = struct{}{}
+			filter = append(filter, line)
 		}
 	}
 
@@ -57,16 +81,16 @@ func main() {
 	if err != nil {
 		if os.IsNotExist(err) {
 			slog.Info("models-filter file not found. Skipping model filtering.")
-			modelFilter = make(map[string]struct{})
+			modelFilter = []string{}
 		} else {
 			slog.Error("Error loading models filter", "Error", err)
 			return
 		}
 	} else {
 		modelFilter = filter
-		slog.Info("Loaded models from filter:")
-		for model := range modelFilter {
-			slog.Info(" - " + model)
+		slog.Info("Loaded model patterns from filter:")
+		for _, pattern := range modelFilter {
+			slog.Info(" - " + pattern)
 		}
 	}
 
