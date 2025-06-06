@@ -1,5 +1,9 @@
 package handlers
 
+import (
+	"github.com/sashabaranov/go-openai"
+)
+
 // OllamaMessage represents the Ollama message format which may include images
 type OllamaMessage struct {
 	Role    string   `json:"role"`
@@ -38,4 +42,22 @@ type GenerateRequest struct {
 	Raw       bool                   `json:"raw"`
 	Context   []int                  `json:"context"`
 	KeepAlive string                 `json:"keep_alive"`
+}
+
+type OpenRouterArchitecture struct {
+	InputModalities []string `json:"input_modalities"`
+	OutputModalities []string `json:"output_modalities"`
+}
+
+type OpenRouterModel struct {
+	openai.Model
+	Name                string                 `json:"name"`
+	Description         string                 `json:"description,omitempty"`
+	Architecture        OpenRouterArchitecture `json:"architecture,omitempty"`
+	SupportedParameters []string               `json:"supported_parameters,omitempty"`
+	ContextLength       int                    `json:"context_length,omitempty"`
+}
+
+type OpenRouterModelsList struct {
+	Models []OpenRouterModel `json:"data"`
 }

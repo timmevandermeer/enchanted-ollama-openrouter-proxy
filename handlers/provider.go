@@ -10,16 +10,24 @@ import (
 )
 
 type OpenrouterProvider struct {
-	client     *openai.Client
-	modelNames []string // Shared storage for model names
+	client           *openai.Client
+	customHttpClient *HTTPClient
+	modelNames       []string // Shared storage for model names
+	models           []OpenRouterModel
 }
 
 func NewOpenrouterProvider(apiKey string) *OpenrouterProvider {
 	config := openai.DefaultConfig(apiKey)
 	config.BaseURL = "https://openrouter.ai/api/v1/" // Custom endpoint if needed
+
+	baseURL := "https://openrouter.ai/api/v1/"
+	httpClient := NewHTTPClient(baseURL, apiKey)
+
 	return &OpenrouterProvider{
-		client:     openai.NewClientWithConfig(config),
-		modelNames: []string{},
+		client:           openai.NewClientWithConfig(config),
+		customHttpClient: httpClient,
+		modelNames:       []string{},
+		models:           []OpenRouterModel{},
 	}
 }
 
@@ -63,13 +71,17 @@ func (o *OpenrouterProvider) GetModels() ([]Model, error) {
 	currentTime := time.Now().Format(time.RFC3339)
 
 	// Fetch models from the OpenAI API
-	modelsResponse, err := o.client.ListModels(context.Background())
+	customResponse, err := o.customHttpClient.Get("models")
+	var modelsResponse OpenRouterModelsList
+	o.customHttpClient.DecodeJSON(customResponse, &modelsResponse)
+
 	if err != nil {
 		return nil, err
 	}
 
 	// Clear shared model storage
 	o.modelNames = []string{}
+	o.models = []OpenRouterModel{}
 
 	var models []Model
 	for _, apiModel := range modelsResponse.Models {
@@ -79,6 +91,7 @@ func (o *OpenrouterProvider) GetModels() ([]Model, error) {
 
 		// Store name in shared storage
 		o.modelNames = append(o.modelNames, apiModel.ID)
+		o.models = append(o.models, apiModel)
 
 		// Create model struct
 		model := Model{
@@ -106,6 +119,33 @@ func (o *OpenrouterProvider) GetModelDetails(modelName string) (map[string]inter
 	// Stub response; replace with actual model details if available
 	currentTime := time.Now().Format(time.RFC3339)
 
+	// Find model info in shared storage
+	modelInfo := OpenRouterModel{}
+	fullModelName, _ := o.GetFullModelName(modelName)
+
+	for _, model := range o.models {
+		if model.ID == fullModelName {
+			modelInfo = model
+			break
+		}
+	}
+
+	contextLength := 128000 // Default context length if not found
+	if modelInfo.ContextLength != 0 {
+		contextLength = modelInfo.ContextLength
+	}
+
+	capatbilities := []string{
+		"completion",
+		"chat",
+	}
+
+	for _, modality := range modelInfo.Architecture.InputModalities {
+		if modality == "image" {
+			capatbilities = append(capatbilities, "vision")
+		}
+	}
+
 	return map[string]interface{}{
 		"license":    "STUB License",
 		"system":     "STUB SYSTEM",
@@ -118,14 +158,9 @@ func (o *OpenrouterProvider) GetModelDetails(modelName string) (map[string]inter
 			"family":             "llama",
 		},
 		"model_info": map[string]interface{}{
-			"llama.context_length": 128000,
+			"llama.context_length": contextLength,
 		},
-		"capabilities": []string{
-			"completion",
-			"chat",
-			"embeddings",
-			"vision",
-		},
+		"capabilities": capatbilities,
 	}, nil
 }
 
